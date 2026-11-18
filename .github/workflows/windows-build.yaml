@@ -4,7 +4,16 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 env:
   FLUTTER_VERSION: '3.47.6'
@@ -12,7 +21,7 @@ env:
 
 jobs:
   windows-amd64:
-    name: Windows amd64 Package
+    name: Windows x86_64 Setup Installer
     runs-on: windows-2022
     steps:
       - name: Enable git long paths
@@ -61,12 +70,31 @@ jobs:
           curl -fsSL --retry 3 -o "$bundle" "https://curl.se/ca/$CA_BUNDLE"
           echo "$CA_BUNDLE_SHA256  $bundle" | sha256sum -c -
 
-      - name: Package Windows installer and portable zip
-        run: dart setup.dart windows --env stable -v
+      - name: Package Windows x86_64 setup installer
+        run: dart setup.dart windows --targets exe --env stable -v
 
-      - name: Upload Windows packages
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            tag="${{ github.ref_name }}"
+          else
+            ver="$(sed -n 's/^version: *\([^+[:space:]]*\).*/\1/p' pubspec.yaml)"
+            tag="v${ver}-cftunnel"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FlClash-windows-amd64
-          path: ./dist/*
+          name: FlClash-windows-amd64-setup
+          path: ./dist/*-windows-amd64-setup.exe
           overwrite: true
+
+      - name: Publish Windows installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: FlClash ${{ steps.meta.outputs.tag }}
+          files: ./dist/*-windows-amd64-setup.exe
