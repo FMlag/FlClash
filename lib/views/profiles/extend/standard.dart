@@ -20,10 +20,27 @@ class _StandardContentState extends ConsumerState<StandardContent> {
   final _key = uniqueId;
   late int _profileId;
 
+  List<String> _customTargetNames() {
+    final customProxies =
+        ref.read(customProxiesProvider).value ?? const <CustomProxy>[];
+    final clashConfig = ref.read(clashConfigProvider(_profileId)).value;
+    final groups = clashConfig?.proxyGroups ?? const [];
+    final proxies = clashConfig?.proxies ?? const [];
+    return [
+      for (final proxy in customProxies)
+        if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+      for (final group in groups)
+        if (group.name.isNotEmpty && !group.name.contains(',')) group.name,
+      for (final proxy in proxies)
+        if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+    ];
+  }
+
   Future<void> _handleAddOrUpdate([Rule? rule]) async {
+    final customTargets = _customTargetNames();
     final res = await showFormSheet<Rule>(
       context: context,
-      builder: (_) => RuleForm(rule: rule),
+      builder: (_) => RuleForm(rule: rule, customTargets: customTargets),
     );
     if (res == null) {
       return;
@@ -91,7 +108,12 @@ class _StandardContentState extends ConsumerState<StandardContent> {
     BaseNavigator.push(context, _EditGlobalAddedRules(_profileId));
   }
 
-  Widget _buildRuleItem(List<Rule> rules, int index, Set<dynamic> selected) {
+  Widget _buildRuleItem(
+    List<Rule> rules,
+    int index,
+    Set<dynamic> selected,
+    String? Function(Rule rule) invalidMessageOf,
+  ) {
     final rule = rules[index];
     return ReorderDragStartListener(
       key: ObjectKey(rule),
@@ -105,6 +127,7 @@ class _StandardContentState extends ConsumerState<StandardContent> {
             isEditing: selected.isNotEmpty,
             isSelected: selected.contains(rule.id),
             rule: rule,
+            invalidMessageOf: invalidMessageOf,
             onSelected: () {
               _handleSelected(rule.id);
             },
@@ -123,6 +146,32 @@ class _StandardContentState extends ConsumerState<StandardContent> {
     _profileId = ProfileIdProvider.of(context)!.profileId;
     final addedRules = ref.watch(profileRulesProvider(_profileId)).value ?? [];
     final selectedRules = ref.watch(itemsProvider(_key));
+    final customProxiesState = ref.watch(customProxiesProvider);
+    final clashConfigState = ref.watch(clashConfigProvider(_profileId));
+    final groups = clashConfigState.value?.proxyGroups ?? const [];
+    final proxies = clashConfigState.value?.proxies ?? const [];
+    final validCustomTargets = {
+      for (final proxy in customProxiesState.value ?? const <CustomProxy>[])
+        if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+      for (final group in groups)
+        if (group.name.isNotEmpty && !group.name.contains(',')) group.name,
+      for (final proxy in proxies)
+        if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+    };
+    String? invalidMessageOf(Rule rule) {
+      if (customProxiesState.isLoading || clashConfigState.isLoading) {
+        return null;
+      }
+      final target = rule.ruleTarget ?? '';
+      final upper = target.toUpperCase();
+      if (RuleTarget.ruleTargets.contains(upper) ||
+          upper == RuleAction.MATCH.value ||
+          validCustomTargets.contains(target)) {
+        return null;
+      }
+      return appLocalizations.invalidPolicy(target);
+    }
+
     return PopGuard(
       onPop: selectedRules.isEmpty
           ? null
@@ -167,10 +216,19 @@ class _StandardContentState extends ConsumerState<StandardContent> {
           ),
           SliverPrismReorderableList(
             itemCount: addedRules.length,
-            itemBuilder: (_, index) =>
-                _buildRuleItem(addedRules, index, selectedRules),
+            itemBuilder: (_, index) => _buildRuleItem(
+              addedRules,
+              index,
+              selectedRules,
+              invalidMessageOf,
+            ),
             proxyDecorator: (child, index, animation) => commonProxyDecorator(
-              _buildRuleItem(addedRules, index, selectedRules),
+              _buildRuleItem(
+                addedRules,
+                index,
+                selectedRules,
+                invalidMessageOf,
+              ),
               index,
               animation,
             ),

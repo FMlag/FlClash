@@ -99,6 +99,21 @@ Future<SetupState> setupState(Ref ref, int? profileId) async {
       };
     } else if (extendType == ExtendType.standard) {
       addedRules = await database.rulesDao.queryAddedRules(profileId).get();
+      final hasCustomTarget = addedRules.any((rule) {
+        final target = rule.ruleTarget;
+        return target != null &&
+            target.isNotEmpty &&
+            !RuleTarget.ruleTargets.contains(target.toUpperCase()) &&
+            target.toUpperCase() != 'MATCH';
+      });
+      if (hasCustomTarget) {
+        appProxies = await database.customProxiesDao.query().get();
+        proxyDialers = {
+          for (final dialer
+              in await database.proxyDialersDao.query(profileId).get())
+            dialer.proxyId: dialer.target,
+        };
+      }
     } else if (extendType == ExtendType.script) {
       script = scriptId == null
           ? null

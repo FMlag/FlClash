@@ -1556,4 +1556,84 @@ void main() {
       'Home',
     });
   });
+
+  test('referencedAppProxiesPayload includes chained custom proxies and drops '
+      'dialer loops', () {
+    const cfSsh = CustomProxy(
+      id: 1,
+      definition: {
+        'name': 'CF-SSH',
+        'type': 'cftunnel',
+        'client-id': 'id',
+        'client-secret': 'secret',
+        'dialer-proxy': 'Relay',
+      },
+    );
+    const relay = CustomProxy(
+      id: 2,
+      definition: {'name': 'Relay', 'type': 'socks5', 'server': '1.2.3.4'},
+    );
+    const unused = CustomProxy(
+      id: 3,
+      definition: {'name': 'Unused', 'type': 'cftunnel'},
+    );
+    const rules = [
+      Rule(
+        id: 10,
+        ruleAction: RuleAction.DOMAIN_REGEX,
+        content: r'^ssh-.*\.example\.com$',
+        ruleTarget: 'CF-SSH',
+      ),
+    ];
+
+    expect(referencedAppProxiesPayload([cfSsh, relay, unused], rules: rules), [
+      {
+        'name': 'CF-SSH',
+        'type': 'cftunnel',
+        'client-id': 'id',
+        'client-secret': 'secret',
+        'dialer-proxy': 'Relay',
+      },
+      {'name': 'Relay', 'type': 'socks5', 'server': '1.2.3.4'},
+    ]);
+
+    expect(
+      referencedAppProxiesPayload(
+        [cfSsh, relay],
+        rules: rules,
+        dialers: const {2: 'CF-SSH'},
+      ),
+      [
+        {
+          'name': 'CF-SSH',
+          'type': 'cftunnel',
+          'client-id': 'id',
+          'client-secret': 'secret',
+        },
+        {'name': 'Relay', 'type': 'socks5', 'server': '1.2.3.4'},
+      ],
+    );
+
+    expect(
+      mergeNonCollidingProxies(
+        {
+          'proxies': [
+            {'name': 'Relay', 'type': 'ss'},
+          ],
+          'proxy-groups': [
+            {'name': 'GroupA', 'type': 'select'},
+          ],
+        },
+        [
+          {'name': 'CF-SSH', 'type': 'cftunnel'},
+          {'name': 'Relay', 'type': 'cftunnel'},
+          {'name': 'GroupA', 'type': 'cftunnel'},
+        ],
+      )['proxies'],
+      [
+        {'name': 'Relay', 'type': 'ss'},
+        {'name': 'CF-SSH', 'type': 'cftunnel'},
+      ],
+    );
+  });
 }

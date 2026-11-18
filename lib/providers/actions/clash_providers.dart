@@ -224,10 +224,22 @@ class ClashProvidersAction extends _$ClashProvidersAction {
     force: force,
   );
 
-  Future<void> applyIfProxiesNamed(Set<String> names) => _applyIf(
-    (profileId) async => (await database.proxyGroupsDao.query(profileId).get())
-        .any((group) => group.proxies?.any(names.contains) ?? false),
-  );
+  Future<void> applyIfProxiesNamed(Set<String> names) => _applyIf((
+    profileId,
+  ) async {
+    final profile = ref.read(profilesProvider).getProfile(profileId);
+    if (profile?.type == ProfileType.custom) {
+      return (await database.proxyGroupsDao.query(profileId).get()).any(
+        (group) => group.proxies?.any(names.contains) ?? false,
+      );
+    }
+    if ((profile?.extendType ?? ExtendType.standard) == ExtendType.standard) {
+      return (await database.rulesDao.queryAddedRules(profileId).get()).any(
+        (rule) => names.contains(rule.ruleTarget),
+      );
+    }
+    return false;
+  });
 
   Future<void> _applyIf(
     Future<bool> Function(int profileId) isReferenced, {

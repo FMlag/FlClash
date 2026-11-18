@@ -521,6 +521,18 @@ class SetupAction extends _$SetupAction {
     if (hasScript) {
       rawConfig = await handleEvaluate(scriptContent!, rawConfig);
     }
+    if (!isCustom && setupState.appProxies.isNotEmpty) {
+      final injectedProxies = referencedAppProxiesPayload(
+        setupState.appProxies,
+        rules: setupState.addedRules,
+        dialers: setupState.proxyDialers,
+      );
+      if (injectedProxies.isNotEmpty) {
+        rawConfig = profileBase != null
+            ? {...rawConfig, 'proxies': injectedProxies}
+            : mergeNonCollidingProxies(rawConfig, injectedProxies);
+      }
+    }
     final directory = await appPath.profilesPath;
     final injected = await _resolveInjectedProviders(
       setupState,

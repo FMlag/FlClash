@@ -1,4 +1,5 @@
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/features/features.dart';
 import 'package:fl_clash/models/clash_config.dart';
 import 'package:fl_clash/providers/providers.dart';
@@ -31,10 +32,17 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
     });
   }
 
+  List<String> _customTargetNames() => [
+    for (final proxy
+        in ref.read(customProxiesProvider).value ?? const <CustomProxy>[])
+      if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+  ];
+
   Future<void> _handleAddOrUpdate([Rule? rule]) async {
+    final customTargets = _customTargetNames();
     final res = await showFormSheet<Rule>(
       context: context,
-      builder: (_) => RuleForm(rule: rule),
+      builder: (_) => RuleForm(rule: rule, customTargets: customTargets),
     );
     if (res == null || !mounted) {
       return;
@@ -95,6 +103,25 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
   Widget build(BuildContext context) {
     final appLocalizations = context.appLocalizations;
     final rulesState = ref.watch(globalRulesProvider);
+    final customProxiesState = ref.watch(customProxiesProvider);
+    final validCustomTargets = {
+      for (final proxy in customProxiesState.value ?? const <CustomProxy>[])
+        if (proxy.name.isNotEmpty && !proxy.name.contains(',')) proxy.name,
+    };
+    String? invalidMessageOf(Rule rule) {
+      if (customProxiesState.isLoading) {
+        return null;
+      }
+      final target = rule.ruleTarget ?? '';
+      final upper = target.toUpperCase();
+      if (RuleTarget.ruleTargets.contains(upper) ||
+          upper == RuleAction.MATCH.value ||
+          validCustomTargets.contains(target)) {
+        return null;
+      }
+      return appLocalizations.invalidPolicy(target);
+    }
+
     final rules = _visibleRules(rulesState.value ?? []);
     final isSearching = _query.isNotEmpty;
     final selectedRules = ref.watch(itemsProvider(_key));
@@ -150,8 +177,12 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
             builder: (context) => isSearching
                 ? PrismListView(
                     padding: _listPadding(context),
-                    itemBuilder: (_, index) =>
-                        _buildRuleItem(rules, index, selectedRules),
+                    itemBuilder: (_, index) => _buildRuleItem(
+                      rules,
+                      index,
+                      selectedRules,
+                      invalidMessageOf,
+                    ),
                     itemExtent: ruleItemHeight,
                     itemCount: rules.length,
                   )
@@ -160,11 +191,21 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
                     itemBuilder: (_, index) => ReorderDragStartListener(
                       key: ObjectKey(rules[index]),
                       index: index,
-                      child: _buildRuleItem(rules, index, selectedRules),
+                      child: _buildRuleItem(
+                        rules,
+                        index,
+                        selectedRules,
+                        invalidMessageOf,
+                      ),
                     ),
                     proxyDecorator: (child, index, animation) =>
                         commonProxyDecorator(
-                          _buildRuleItem(rules, index, selectedRules),
+                          _buildRuleItem(
+                            rules,
+                            index,
+                            selectedRules,
+                            invalidMessageOf,
+                          ),
                           index,
                           animation,
                         ),
@@ -187,7 +228,12 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
     16 + context.bottomInset,
   );
 
-  Widget _buildRuleItem(List<Rule> rules, int index, Set<dynamic> selected) {
+  Widget _buildRuleItem(
+    List<Rule> rules,
+    int index,
+    Set<dynamic> selected,
+    String? Function(Rule rule) invalidMessageOf,
+  ) {
     final rule = rules[index];
     return ItemPositionProvider(
       key: ObjectKey(rule),
@@ -197,6 +243,7 @@ class _AddedRulesViewState extends ConsumerState<AddedRulesView> {
         isEditing: selected.isNotEmpty,
         rule: rule,
         isSelected: selected.contains(rule.id),
+        invalidMessageOf: invalidMessageOf,
         onSelected: () {
           _handleSelected(rule.id);
         },

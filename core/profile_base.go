@@ -141,10 +141,16 @@ func mergeProfileBase(base *SetupBase) (*yaml.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	overlayProxies := mappingValue(root, "proxies")
 	for _, key := range profileBaseSections {
 		if value := mappingValue(profile, key); value != nil {
 			setMappingValue(root, key, value)
 		}
+	}
+	if mergedProxies, err := mergeOverlayProxies(overlayProxies, mappingValue(profile, "proxies"), mappingValue(profile, "proxy-groups")); err != nil {
+		return nil, err
+	} else if mergedProxies != nil {
+		setMappingValue(root, "proxies", mergedProxies)
 	}
 	rules, err := appendRules(mappingValue(root, "rules"), mappingValue(profile, "rules"))
 	if err != nil {
@@ -216,6 +222,57 @@ func setMappingValue(mapping *yaml.Node, key string, value *yaml.Node) {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		value,
 	)
+}
+
+func collectSequenceNames(seq *yaml.Node, taken map[string]struct{}) {
+	seq = resolveAlias(seq)
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return
+	}
+	for _, item := range seq.Content {
+		item = resolveAlias(item)
+		if item == nil || item.Kind != yaml.MappingNode {
+			continue
+		}
+		if name := resolveAlias(mappingValue(item, "name")); name != nil && name.Kind == yaml.ScalarNode && name.Value != "" {
+			taken[name.Value] = struct{}{}
+		}
+	}
+}
+
+func mergeOverlayProxies(overlayProxies, profileProxies, profileGroups *yaml.Node) (*yaml.Node, error) {
+	overlayProxies = resolveAlias(overlayProxies)
+	profileProxies = resolveAlias(profileProxies)
+	if overlayProxies == nil || isNull(overlayProxies) || (overlayProxies.Kind == yaml.SequenceNode && len(overlayProxies.Content) == 0) {
+		return profileProxies, nil
+	}
+	if overlayProxies.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("line %d: proxies must be a list", overlayProxies.Line)
+	}
+	if profileProxies == nil || isNull(profileProxies) {
+		return overlayProxies, nil
+	}
+	if profileProxies.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("line %d: proxies must be a list", profileProxies.Line)
+	}
+	taken := make(map[string]struct{}, len(profileProxies.Content))
+	collectSequenceNames(profileProxies, taken)
+	collectSequenceNames(profileGroups, taken)
+	content := make([]*yaml.Node, 0, len(profileProxies.Content)+len(overlayProxies.Content))
+	content = append(content, profileProxies.Content...)
+	for _, item := range overlayProxies.Content {
+		resolved := resolveAlias(item)
+		if resolved != nil && resolved.Kind == yaml.MappingNode {
+			if name := resolveAlias(mappingValue(resolved, "name")); name != nil && name.Kind == yaml.ScalarNode && name.Value != "" {
+				if _, exists := taken[name.Value]; exists {
+					continue
+				}
+				taken[name.Value] = struct{}{}
+			}
+		}
+		content = append(content, item)
+	}
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: content}, nil
 }
 
 // The overlay's rules are the ones the host adds in front of the profile's.

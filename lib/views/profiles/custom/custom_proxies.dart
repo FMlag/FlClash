@@ -20,6 +20,11 @@ extension on ProxyField {
     ProxyField.uuid => 'UUID',
     ProxyField.psk || ProxyField.preSharedKey => l.preSharedKey,
     ProxyField.authStr => l.password,
+    ProxyField.clientId => 'Client ID',
+    ProxyField.clientSecret => 'Client Secret',
+    ProxyField.accessToken => 'Access Token',
+    ProxyField.destination => l.destination,
+    ProxyField.cfPath => 'WebSocket Path',
     ProxyField.key => l.secretKey,
     ProxyField.privateKey => l.privateKey,
     ProxyField.publicKey => l.publicKey,
@@ -109,7 +114,10 @@ extension on ProxyField {
     ProxyField.publicKey ||
     ProxyField.privateKeyPassphrase ||
     ProxyField.preSharedKey ||
-    ProxyField.authStr => true,
+    ProxyField.authStr ||
+    ProxyField.clientId ||
+    ProxyField.clientSecret ||
+    ProxyField.accessToken => true,
     _ => false,
   };
 
@@ -117,6 +125,8 @@ extension on ProxyField {
     _ when isCredential => _OptionSection.authentication,
     ProxyField.network ||
     ProxyField.flow ||
+    ProxyField.cfPath ||
+    ProxyField.destination ||
     ProxyField.wsPath ||
     ProxyField.wsHost ||
     ProxyField.wsHeaders ||
@@ -160,6 +170,8 @@ extension on ProxyField {
     ProxyField.allowedIps => TextInputLimits.cidr,
     ProxyField.dns => TextInputLimits.dnsServer,
     ProxyField.wsPath ||
+    ProxyField.cfPath ||
+    ProxyField.accessToken ||
     ProxyField.httpPath ||
     ProxyField.h2Path ||
     ProxyField.xhttpPath ||
@@ -1055,6 +1067,7 @@ class _EditCustomProxyViewState extends ConsumerState<_EditCustomProxyView> {
     required String title,
     required String key,
     required String? value,
+    int maxLength = TextInputLimits.password,
     String? hintText,
     Widget? leading,
     ValueChanged<Object?>? onChanged,
@@ -1065,7 +1078,7 @@ class _EditCustomProxyViewState extends ConsumerState<_EditCustomProxyView> {
       title: title,
       key: key,
       value: value,
-      maxLength: TextInputLimits.password,
+      maxLength: maxLength,
       hintText: hintText,
       obscureText: !revealed,
       leading: leading,
@@ -1122,6 +1135,9 @@ class _EditCustomProxyViewState extends ConsumerState<_EditCustomProxyView> {
         title: title,
         key: key,
         value: value?.toString(),
+        maxLength: field == ProxyField.accessToken
+            ? TextInputLimits.url
+            : TextInputLimits.password,
         hintText: hintText,
         leading: leading,
         onChanged: update,

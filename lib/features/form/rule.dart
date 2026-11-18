@@ -247,8 +247,9 @@ enum _RuleField { content, target }
 
 class RuleForm extends StatefulWidget {
   final Rule? rule;
+  final List<String> customTargets;
 
-  const RuleForm({super.key, this.rule});
+  const RuleForm({super.key, this.rule, this.customTargets = const []});
 
   @override
   State<RuleForm> createState() => _RuleFormState();
@@ -345,7 +346,16 @@ class _RuleFormState extends State<RuleForm> {
   Widget build(BuildContext context) {
     final appLocalizations = context.appLocalizations;
     final issue = _attempted ? _issue() : null;
-    final targets = [...RuleTarget.ruleTargetNames, RuleAction.MATCH.value];
+    final baseTargets = [...RuleTarget.ruleTargetNames, RuleAction.MATCH.value];
+    final seenTargets = {...baseTargets};
+    final targets = [
+      ...baseTargets,
+      for (final target in widget.customTargets)
+        if (target.isNotEmpty &&
+            !target.contains(',') &&
+            seenTargets.add(target))
+          target,
+    ];
     return FormPage(
       title: widget.rule != null
           ? appLocalizations.editRule

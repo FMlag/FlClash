@@ -301,4 +301,46 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('custom targets appear in the strategy picker', (tester) async {
+    Rule? result;
+    await tester.pumpWidget(
+      TestApp(
+        wrapInProviderScope: true,
+        overrides: [
+          viewSizeProvider.overrideWithBuild((_, _) => const Size(1200, 800)),
+        ],
+        child: Builder(
+          builder: (context) {
+            return FilledButton(
+              onPressed: () async {
+                result = await showFormSheet<Rule>(
+                  context: context,
+                  builder: (_) => const RuleForm(customTargets: ['CF-SSH']),
+                );
+              },
+              child: const Text('open'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.current;
+
+    await tester.enterText(find.byType(TextFormField), 'ssh-node.example.com');
+    await tester.tap(find.text(l10n.splitStrategy));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('CF-SSH').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('CF-SSH').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, l10n.save));
+    await tester.pumpAndSettle();
+
+    expect(result?.ruleTarget, 'CF-SSH');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

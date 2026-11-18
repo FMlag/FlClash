@@ -412,3 +412,39 @@ func TestEncodeConfigMappingKeepsEveryKeyAfterAnOpenEndedScalar(t *testing.T) {
 		t.Errorf("decoded %d rules, want all %d in order", len(decoded.Rules), len(rules))
 	}
 }
+
+func TestMergeProfileBaseAppendsNonCollidingOverlayProxies(t *testing.T) {
+	path := writeBaseProfile(t, baseProfile)
+	base, err := handleGetProfileBase(PathParams{Path: path})
+	if err != nil {
+		t.Fatalf("handleGetProfileBase = %v", err)
+	}
+	overlay := overlayOf(t, base, []string{"DOMAIN-REGEX,^ssh-.*\\.example\\.com$,cf-ssh"}, map[string]any{
+		"proxies": []map[string]any{
+			{"name": "cf-ssh", "type": "cftunnel", "client-id": "id", "client-secret": "secret", "dialer-proxy": "g"},
+			{"name": "a", "type": "cftunnel"},
+			{"name": "g", "type": "cftunnel"},
+		},
+	})
+
+	cfg, err := loadConfigWithBase(&SetupBase{Path: path, Overlay: overlay}, filepath.Join(t.TempDir(), "config.yaml"))
+	if err != nil {
+		t.Fatalf("loadConfigWithBase = %v", err)
+	}
+	cfProxy, ok := cfg.Proxies["cf-ssh"]
+	if !ok {
+		t.Fatal("merged config is missing injected cftunnel proxy cf-ssh")
+	}
+	if cfProxy.Type() != constant.CFTunnel {
+		t.Errorf("cf-ssh type = %v, want CFTunnel", cfProxy.Type())
+	}
+	if cfProxy.ProxyInfo().DialerProxy != "g" {
+		t.Errorf("cf-ssh dialer-proxy = %q, want g", cfProxy.ProxyInfo().DialerProxy)
+	}
+	if cfg.Proxies["a"].Type() != constant.Socks5 {
+		t.Errorf("existing proxy a was shadowed: got %v", cfg.Proxies["a"].Type())
+	}
+	if cfg.Proxies["g"].Type() != constant.Selector {
+		t.Errorf("existing group g was shadowed: got %v", cfg.Proxies["g"].Type())
+	}
+}

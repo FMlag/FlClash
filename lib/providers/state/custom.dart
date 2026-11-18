@@ -741,6 +741,130 @@ List<Map<String, dynamic>> appProxiesPayload(
   return payload;
 }
 
+List<Map<String, dynamic>> referencedAppProxiesPayload(
+  Iterable<CustomProxy> proxies, {
+  required Iterable<Rule> rules,
+  Map<int, String> dialers = const {},
+}) {
+  final byName = <String, CustomProxy>{};
+  for (final proxy in proxies) {
+    final name = proxy.name;
+    if (name.isNotEmpty && !name.contains(',')) {
+      byName.putIfAbsent(name, () => proxy);
+    }
+  }
+  if (byName.isEmpty) {
+    return const [];
+  }
+  String? dialerOf(CustomProxy proxy) {
+    final target =
+        dialers[proxy.id] ?? proxy.definition['dialer-proxy']?.toString();
+    return target != null && target.isNotEmpty ? target : null;
+  }
+
+  final included = <String>{};
+  final queue = <String>[
+    for (final rule in rules)
+      if (rule.ruleTarget case final target?
+          when byName.containsKey(target) &&
+              !RuleTarget.ruleTargets.contains(target.toUpperCase()) &&
+              target.toUpperCase() != 'MATCH')
+        target,
+  ];
+  while (queue.isNotEmpty) {
+    final name = queue.removeLast();
+    if (!included.add(name)) {
+      continue;
+    }
+    final proxy = byName[name];
+    if (proxy == null) {
+      continue;
+    }
+    final dialer = dialerOf(proxy);
+    if (dialer != null && byName.containsKey(dialer)) {
+      queue.add(dialer);
+    }
+  }
+  if (included.isEmpty) {
+    return const [];
+  }
+  final chain = {
+    for (final name in included)
+      if (byName[name] case final proxy?) name: ?dialerOf(proxy),
+  };
+  bool reachesSelf(String start) {
+    final seen = <String>{};
+    var current = chain[start];
+    while (current != null) {
+      if (current == start) {
+        return true;
+      }
+      if (!seen.add(current)) {
+        return false;
+      }
+      current = chain[current];
+    }
+    return false;
+  }
+
+  final looping = {
+    for (final name in chain.keys)
+      if (reachesSelf(name)) name,
+  };
+  final payload = <Map<String, dynamic>>[];
+  for (final proxy in proxies) {
+    if (!included.contains(proxy.name) || byName[proxy.name]?.id != proxy.id) {
+      continue;
+    }
+    final dialer = chain[proxy.name];
+    if (dialer != null && !looping.contains(proxy.name)) {
+      payload.add({...proxy.definition, 'dialer-proxy': dialer});
+      continue;
+    }
+    if (dialer != null) {
+      commonPrint.log(
+        'Dropped the dialer of ${proxy.name}: $dialer leads back to it',
+        logLevel: LogLevel.warning,
+      );
+    }
+    payload.add({...proxy.definition}..remove('dialer-proxy'));
+  }
+  return payload;
+}
+
+Map<String, dynamic> mergeNonCollidingProxies(
+  Map<String, dynamic> rawConfig,
+  List<Map<String, dynamic>> injectedProxies,
+) {
+  if (injectedProxies.isEmpty) {
+    return rawConfig;
+  }
+  final taken = <String>{};
+  for (final section in const ['proxies', 'proxy-groups']) {
+    if (rawConfig[section] case final List items) {
+      for (final item in items) {
+        if (item is Map && item['name'] != null) {
+          taken.add(item['name'].toString());
+        }
+      }
+    }
+  }
+  final existing = switch (rawConfig['proxies']) {
+    final List items => List<dynamic>.from(items),
+    _ => <dynamic>[],
+  };
+  var added = false;
+  for (final proxy in injectedProxies) {
+    final name = proxy['name']?.toString() ?? '';
+    if (name.isEmpty || !taken.add(name)) {
+      continue;
+    }
+    existing.add(proxy);
+    added = true;
+  }
+  return added ? {...rawConfig, 'proxies': existing} : rawConfig;
+}
+
 List<CustomIssue> proxyDialerIssues(
   CustomProxy proxy,
   String? target,

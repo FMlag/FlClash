@@ -268,6 +268,7 @@ const customProxyTypes = [
   'tailscale',
   'zerotier',
   'easytier',
+  'cftunnel',
 ];
 
 /// The standard methods of sing-shadowsocks2, which mihomo's ss adapter
@@ -439,6 +440,11 @@ extension CustomProxyExt on CustomProxy {
     'sudoku' => const [ProxyField.key],
     'wireguard' ||
     'masque' => const [ProxyField.privateKey, ProxyField.publicKey],
+    'cftunnel' => const [
+      ProxyField.clientId,
+      ProxyField.clientSecret,
+      ProxyField.accessToken,
+    ],
     'mieru' => const [
       ProxyField.transport,
       ProxyField.username,
@@ -478,6 +484,9 @@ extension CustomProxyExt on CustomProxy {
         ProxyField.key,
         ProxyField.privateKey,
         ProxyField.authStr,
+        ProxyField.clientId,
+        ProxyField.clientSecret,
+        ProxyField.accessToken,
       }.contains(field))
         field,
   ];
@@ -502,9 +511,13 @@ extension CustomProxyExt on CustomProxy {
       ProxyField.key ||
       ProxyField.publicKey ||
       ProxyField.authStr ||
+      ProxyField.clientId ||
+      ProxyField.clientSecret ||
+      ProxyField.accessToken ||
       ProxyField.cipher ||
       ProxyField.alterId ||
       ProxyField.transport => false,
+      ProxyField.cfPath || ProxyField.destination => type == 'cftunnel',
       ProxyField.privateKey || ProxyField.privateKeyPassphrase => type == 'ssh',
       ProxyField.preSharedKey || ProxyField.allowedIps => type == 'wireguard',
       ProxyField.obfs ||
@@ -532,7 +545,7 @@ extension CustomProxyExt on CustomProxy {
       ProxyField.xhttpPath || ProxyField.xhttpHost => _usesNetwork('xhttp'),
       ProxyField.mkcpSeed || ProxyField.mkcpHeader => _usesNetwork('mkcp'),
       ProxyField.mekyaUrl => _usesNetwork('mekya'),
-      ProxyField.headers => type == 'http',
+      ProxyField.headers => type == 'http' || type == 'cftunnel',
       ProxyField.tls => const {
         'socks5',
         'http',
@@ -551,6 +564,7 @@ extension CustomProxyExt on CustomProxy {
         'anytls',
         'masque',
         'trusttunnel',
+        'cftunnel',
       }.contains(type),
       ProxyField.servername => type == 'vmess' || type == 'vless',
       ProxyField.alpn => const {
@@ -563,6 +577,7 @@ extension CustomProxyExt on CustomProxy {
         'shadowquic',
         'anytls',
         'trusttunnel',
+        'cftunnel',
       }.contains(type),
       ProxyField.skipCertVerify => const {
         'socks5',
@@ -577,6 +592,7 @@ extension CustomProxyExt on CustomProxy {
         'anytls',
         'masque',
         'trusttunnel',
+        'cftunnel',
       }.contains(type),
       ProxyField.clientFingerprint => const {
         'ss',
@@ -587,6 +603,7 @@ extension CustomProxyExt on CustomProxy {
         'gost-relay',
         'anytls',
         'trusttunnel',
+        'cftunnel',
       }.contains(type),
       ProxyField.realityPublicKey || ProxyField.realityShortId => const {
         'vmess',
